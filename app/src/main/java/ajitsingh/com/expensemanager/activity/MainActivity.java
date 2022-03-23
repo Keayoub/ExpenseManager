@@ -5,12 +5,6 @@ import android.app.FragmentTransaction;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.os.Bundle;
-import android.support.v4.app.ActionBarDrawerToggle;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.FragmentActivity;
-import android.support.v4.view.GravityCompat;
-import android.support.v4.view.ViewPager;
-import android.support.v4.widget.DrawerLayout;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -18,9 +12,18 @@ import android.widget.AdapterView;
 import android.widget.FrameLayout;
 import android.widget.ListView;
 
+import androidx.appcompat.app.ActionBarDrawerToggle;
+import androidx.core.view.GravityCompat;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentManager;
+import androidx.viewpager.widget.ViewPager;
+
 import ajitsingh.com.expensemanager.R;
 import ajitsingh.com.expensemanager.adapter.DrawerListViewAdapter;
 import ajitsingh.com.expensemanager.adapter.HomeViewPagerAdapter;
+import ajitsingh.com.expensemanager.notification.FillExpenseNotificationScheduler;
 import ajitsingh.com.expensemanager.presenter.NavigationDrawerPresenter;
 import ajitsingh.com.expensemanager.view.NavigationDrawerItemView;
 
@@ -32,45 +35,32 @@ public class MainActivity extends FragmentActivity implements NavigationDrawerIt
   private ActionBarDrawerToggle actionBarDrawerToggle;
   private DrawerLayout drawerLayout;
   public static final int ADD_NEW_CAT = 9991;
+  private static Boolean isNotificationScheduled = false;
+  private HomeViewPagerAdapter homeViewPagerAdapter;
 
   @Override
-  protected void onCreate(Bundle savedInstanceState){
+  protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
 
     configureDrawer();
-    actionBar = getActionBar();
-    actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
+    configureActionBar();
 
-    viewPager = (ViewPager) findViewById(R.id.view_pager);
-    viewPager.setAdapter(new HomeViewPagerAdapter(getSupportFragmentManager()));
-
-    addTabs();
-
-    viewPager.setOnPageChangeListener(new ViewPager.OnPageChangeListener() {
-      @Override
-      public void onPageScrolled(int i, float v, int i2) {
-      }
-
-      @Override
-      public void onPageSelected(int i) {
-        actionBar.setSelectedNavigationItem(i);
-      }
-
-      @Override
-      public void onPageScrollStateChanged(int i) {
-      }
-    });
+    if (!isNotificationScheduled) scheduleReminder();
   }
 
   @Override
   public void render(Fragment fragment) {
-    getSupportFragmentManager().beginTransaction()
+    FragmentManager fragmentManager = getSupportFragmentManager();
+    Fragment existingFragment = fragmentManager.findFragmentById(R.id.main_frame);
+
+    if(existingFragment != null && existingFragment.getClass() == fragment.getClass()) return;
+
+    fragmentManager.beginTransaction()
       .addToBackStack(MainActivity.class.getSimpleName())
       .replace(R.id.main_frame, fragment, fragment.getClass().getSimpleName())
       .commit();
 
-    findViewById(R.id.main_frame).bringToFront();
     actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_STANDARD);
   }
 
@@ -84,7 +74,7 @@ public class MainActivity extends FragmentActivity implements NavigationDrawerIt
   public void onBackPressed() {
     super.onBackPressed();
     int backStackEntryCount = getSupportFragmentManager().getBackStackEntryCount();
-    if(backStackEntryCount == 0)
+    if (backStackEntryCount == 0)
       actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
     actionBar.setTitle(R.string.app_name);
   }
@@ -123,15 +113,19 @@ public class MainActivity extends FragmentActivity implements NavigationDrawerIt
   @Override
   protected void onActivityResult(int requestCode, int resultCode, Intent data) {
     super.onActivityResult(requestCode, resultCode, data);
-    if(requestCode == ADD_NEW_CAT){
+    if (requestCode == ADD_NEW_CAT) {
       viewPager.setAdapter(new HomeViewPagerAdapter(getSupportFragmentManager()));
       viewPager.setCurrentItem(0);
     }
   }
 
+  public void onExpenseAdded() {
+    viewPager.setAdapter(homeViewPagerAdapter);
+    actionBar.setSelectedNavigationItem(1);
+  }
+
   @Override
   public void onTabSelected(ActionBar.Tab tab, FragmentTransaction fragmentTransaction) {
-    viewPager.setAdapter(new HomeViewPagerAdapter(getSupportFragmentManager()));
     viewPager.setCurrentItem(tab.getPosition());
   }
 
@@ -145,22 +139,10 @@ public class MainActivity extends FragmentActivity implements NavigationDrawerIt
 
   }
 
-  private void addTabs() {
-    ActionBar.Tab addNewExpenseTab = actionBar.newTab();
-    addNewExpenseTab.setTabListener(this);
-    addNewExpenseTab.setText("Add New");
-    actionBar.addTab(addNewExpenseTab);
-
-    ActionBar.Tab todayTab = actionBar.newTab();
-    todayTab.setTabListener(this);
-    todayTab.setText("Today");
-    actionBar.addTab(todayTab);
-  }
-
   private void configureDrawer() {
     drawerLayout = (DrawerLayout) findViewById(R.id.drawer);
 
-    actionBarDrawerToggle = new ActionBarDrawerToggle(this, drawerLayout, R.mipmap.ic_menu_closed, R.string.app_name, R.string.action_settings){
+    actionBarDrawerToggle = new ActionBarDrawerToggle(this, drawerLayout, R.string.app_name, R.string.action_settings) {
       @Override
       public void onDrawerOpened(View drawerView) {
         super.onDrawerOpened(drawerView);
@@ -194,5 +176,48 @@ public class MainActivity extends FragmentActivity implements NavigationDrawerIt
         mainFrame.bringToFront();
       }
     });
+  }
+
+  private void configureActionBar() {
+    actionBar = getActionBar();
+    actionBar.setNavigationMode(ActionBar.NAVIGATION_MODE_TABS);
+
+    viewPager = (ViewPager) findViewById(R.id.view_pager);
+    homeViewPagerAdapter = new HomeViewPagerAdapter(getSupportFragmentManager());
+    viewPager.setAdapter(homeViewPagerAdapter);
+
+    addTabs();
+
+    viewPager.setOnPageChangeListener(new ViewPager.OnPageChangeListener() {
+      @Override
+      public void onPageScrolled(int i, float v, int i2) {
+      }
+
+      @Override
+      public void onPageSelected(int i) {
+        actionBar.setSelectedNavigationItem(i);
+      }
+
+      @Override
+      public void onPageScrollStateChanged(int i) {
+      }
+    });
+  }
+
+  private void addTabs() {
+    ActionBar.Tab addNewExpenseTab = actionBar.newTab();
+    addNewExpenseTab.setTabListener(this);
+    addNewExpenseTab.setText("Add New");
+    actionBar.addTab(addNewExpenseTab);
+
+    ActionBar.Tab todayTab = actionBar.newTab();
+    todayTab.setTabListener(this);
+    todayTab.setText("Today");
+    actionBar.addTab(todayTab);
+  }
+
+  private void scheduleReminder() {
+    new FillExpenseNotificationScheduler().schedule(this);
+    isNotificationScheduled = true;
   }
 }
